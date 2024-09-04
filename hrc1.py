@@ -1,7 +1,7 @@
 import os
 from google.cloud import dialogflow
 
-credential_path = (r'./innate-vigil-434613-v1-3a6d5477e206.json')
+credential_path = (r'./key.json')  #change the file if needed
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 
 def detect_intent_texts(project_id, session_id, texts, language_code):
