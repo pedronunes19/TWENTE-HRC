@@ -1,88 +1,3 @@
-'''
-import os
-from google.cloud import dialogflow
-
-credential_path = (r'./key.json')  #change the file if needed
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
-
-def detect_intent_stream(project_id, session_id, audio_file_path, language_code):
-    """Returns the result of detect intent with streaming audio as input.
-
-    Using the same `session_id` between requests allows continuation
-    of the conversation."""
-
-    session_client = dialogflow.SessionsClient()
-
-    # Note: hard coding audio_encoding and sample_rate_hertz for simplicity.
-    audio_encoding = dialogflow.AudioEncoding.AUDIO_ENCODING_LINEAR_16
-    sample_rate_hertz = 16000
-
-    session_path = session_client.session_path(project_id, session_id)
-    print("Session path: {}\n".format(session_path))
-
-    def request_generator(audio_config, audio_file_path):
-        query_input = dialogflow.QueryInput(audio_config=audio_config)
-
-        # The first request contains the configuration.
-        yield dialogflow.StreamingDetectIntentRequest(
-            session=session_path, query_input=query_input
-        )
-
-        # Here we are reading small chunks of audio data from a local
-        # audio file.  In practice these chunks should come from
-        # an audio input device.
-        with open(audio_file_path, "rb") as audio_file:
-            while True:
-                chunk = audio_file.read(4096)
-                if not chunk:
-                    break
-                # The later requests contains audio data.
-                yield dialogflow.StreamingDetectIntentRequest(input_audio=chunk)
-
-    audio_config = dialogflow.InputAudioConfig(
-        audio_encoding=audio_encoding,
-        language_code=language_code,
-        sample_rate_hertz=sample_rate_hertz,
-    )
-
-    requests = request_generator(audio_config, audio_file_path)
-    responses = session_client.streaming_detect_intent(requests=requests)
-
-    print("=" * 20)
-    for response in responses:
-        print(
-            'Intermediate transcript: "{}".'.format(
-                response.recognition_result.transcript
-            )
-        )
-        # Note: Since Python gRPC doesn't have closeSend method, to stop processing the audio after result is recognized,
-        # you may close the channel manually to prevent further iteration.
-        # Keep in mind that if there is a silence chunk in the audio, part after it might be missed because of early teardown.
-        # https://cloud.google.com/dialogflow/es/docs/how/detect-intent-stream#streaming_basics
-        if response.recognition_result.is_final:
-            session_client.transport.close()
-            break
-
-    # Note: The result from the last response is the final transcript along
-    # with the detected content.
-    query_result = response.query_result
-
-    print("=" * 20)
-    print("Query text: {}".format(query_result.query_text))
-    print(
-        "Detected intent: {} (confidence: {})\n".format(
-            query_result.intent.display_name, query_result.intent_detection_confidence
-        )
-    )
-    print("Fulfillment text: {}\n".format(query_result.fulfillment_text))
-
-
-
-
-detect_intent_stream("innate-vigil-434613-v1", "12345", "What time is it", "en-US")  # change project id
-'''
-
-
 import os
 import pyaudio
 import wave
@@ -92,6 +7,7 @@ import time
 from datetime import datetime
 import speech_recognition as sr
 from google.cloud import dialogflow
+import serial
 
 credential_path = (r'./key.json')  #change the file if needed
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
@@ -110,6 +26,8 @@ audio = pyaudio.PyAudio()
 # Start a new stream
 stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE,
                     input=True, frames_per_buffer=CHUNK)
+
+arduino = serial.Serial(port='/dev/ttyACM0',  baudrate=9600, timeout=.1)  # check your serial port
 
 
 def is_silent(data):
@@ -154,8 +72,10 @@ def transcribe_audio(file_path):
         return text
     except sr.UnknownValueError:
         print("Google Web Speech API could not understand the audio.")
+        return 13
     except sr.RequestError as e:
         print(f"Could not request results from Google Web Speech API; {e}")
+        return 13
 
 
 
@@ -191,9 +111,6 @@ def detect_intent_texts(project_id, session_id, texts, language_code):
 
 
 
-#detect_intent_texts("innate-vigil-434613-v1", "1234", ["hey"], "en-US")
-
-
 def main():
     while True:
         print("Listening for speech...")
@@ -206,8 +123,12 @@ def main():
             record_audio(filename)
             print("Recording stopped.")
             txt = transcribe_audio(filename)
-            detect_intent_texts("innate-vigil-434613-v1", "1234", [txt], "en-US")
-            break
+            if (txt == 13):  # Speech not understandable or API exploded
+                time.sleep(1)
+                continue
+            detect_intent_texts("humanrobotcommunication", "1234", [txt], "en-US")
+            # arduino.write(bytes(f"{value}\n".encode(),  'utf-8')) # send intent to arduino 
+            time.sleep(1)
 
 
 
@@ -220,3 +141,4 @@ if __name__ == "__main__":
         stream.stop_stream()
         stream.close()
         audio.terminate()
+        arduino.close()
