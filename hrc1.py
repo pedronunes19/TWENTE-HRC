@@ -9,7 +9,7 @@ import speech_recognition as sr
 from google.cloud import dialogflow
 import serial
 
-credential_path = (r'./key.json')  #change the file if needed
+credential_path = (r'./key1.json')  #change the file if needed
 os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credential_path
 
 # Settings
@@ -108,6 +108,7 @@ def detect_intent_texts(project_id, session_id, texts, language_code):
             )
         )
         print("Fulfillment text: {}\n".format(response.query_result.fulfillment_text))
+        return response.query_result.intent.display_name
 
 
 
@@ -124,10 +125,22 @@ def main():
             print("Recording stopped.")
             txt = transcribe_audio(filename)
             if (txt == 13):  # Speech not understandable or API exploded
+                # arduino.write(bytes([1])) # remove this soon
                 time.sleep(1)
                 continue
-            detect_intent_texts("humanrobotcommunication", "1234", [txt], "en-US")
-            # arduino.write(bytes(f"{value}\n".encode(),  'utf-8')) # send intent to arduino 
+            intent = detect_intent_texts("humanrobotcommunication", "123", [txt], "en-US")
+            if (intent == "Talk" or intent == "RobotFunction" or intent == "Music" or intent == "Greet user"): # neutral
+                print("AAAAA" + intent)
+                arduino.write(bytes([5])) # 4
+                break
+            if (intent == "Default"): # positive
+                print("AAAAA" + intent)
+                arduino.write(bytes([6])) # 5
+                break
+            if (intent == "Sad" or intent == "Loneliness"): # negative
+                print("AAAAA" + intent)
+                arduino.write(bytes([7])) # 6
+                break
             time.sleep(1)
 
 
